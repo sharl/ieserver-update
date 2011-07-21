@@ -1,0 +1,67 @@
+#!/usr/bin/perl
+
+use strict;
+use LWP::UserAgent;
+use HTTP::Request::Common qw(POST);
+use Net::Netrc;
+use Data::Dumper;
+
+my $DEBUG  = (-f '.debug') ? 1 : 0;
+
+my $DOMAIN = 'ieserver.net';
+
+my $SERVER = "http://$DOMAIN/";
+my $FORM   = "https://$DOMAIN/cgi-bin/dip.cgi";
+my $IPfile = $ENV{HOME} . '/.ieserver';
+
+############################
+# 現在の IP アドレスを取得 #
+############################
+my $ua  = LWP::UserAgent->new;
+my $req = HTTP::Request->new('GET', $SERVER);
+my $res = $ua->request($req);
+if (! $res->is_success) {
+    exit 1;
+}
+my ($nowIP) = $res->content =~ /<div align="center" class="moji10P">.*?(\d+\.\d+\.\d+\.\d+)/o;
+
+$DEBUG && print Dumper 'nowIP', $nowIP;
+
+##########################
+# 前回取得した IP と比較 #
+##########################
+open(my $fd, $IPfile);
+my @buffer = map {chomp; $_} <$fd>;
+close($fd);
+my $oldIP = $buffer[0];
+
+$DEBUG && print Dumper 'oldIP', $oldIP;
+
+#######################
+# IP が異なったら登録 #
+#######################
+exit if ($nowIP eq $oldIP);
+
+my $netrc = Net::Netrc->lookup($DOMAIN);
+
+my $req = POST($FORM,
+	       Content => [
+		   username => $netrc->login,
+		   domain   => 'moe.hm',
+		   password => $netrc->password,
+	       ]
+    );
+my $res = $ua->request($req);
+
+$DEBUG && print Dumper $res;
+
+#######################################
+# 登録に成功したら $IPfile に書き出し #
+#######################################
+if ($res->is_success) {
+    $DEBUG && print Dumper $res->content;
+
+    open(my $fd, '>', $IPfile);
+    print $fd $nowIP;
+    close($fd);
+}
